@@ -21,6 +21,11 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/tcp.h>
+
 #include <sys/time.h>
 
 #include <common/config.h>
@@ -170,6 +175,28 @@ static const struct logformat_type logformat_keywords[] = {
 	{ "t", LOG_FMT_DATE, PR_MODE_TCP, LW_INIT, NULL },      /* date */
 	{ "ts", LOG_FMT_TERMSTATE, PR_MODE_TCP, LW_BYTES, NULL },/* termination state */
 	{ "tsc", LOG_FMT_TERMSTATE_CK, PR_MODE_TCP, LW_INIT, NULL },/* termination state */
+
+	{ "TCPoptions", LOG_FMT_TCP_OPTIONS, PR_MODE_TCP, LW_INIT, NULL },/* list of connection tcp options */
+	{ "TCPsndwscale", LOG_FMT_TCP_SND_WSCALE, PR_MODE_TCP, LW_INIT, NULL },/* send window scale */
+	{ "TCPrcvwscale", LOG_FMT_TCP_RCV_WSCALE, PR_MODE_TCP, LW_INIT, NULL },/* recv window scale */
+	{ "TCPsndmss", LOG_FMT_TCP_SND_MSS, PR_MODE_TCP, LW_INIT, NULL },/* send mss */
+	{ "TCPrcvmss", LOG_FMT_TCP_RCV_MSS, PR_MODE_TCP, LW_INIT, NULL },/* rcv mss */
+	{ "TCPunacked", LOG_FMT_TCP_UNACKED, PR_MODE_TCP, LW_INIT, NULL },/* unacked */
+	{ "TCPsacked", LOG_FMT_TCP_SACKED, PR_MODE_TCP, LW_INIT, NULL },/* sacked */
+	{ "TCPlost", LOG_FMT_TCP_LOST, PR_MODE_TCP, LW_INIT, NULL },/* lost */
+	{ "TCPretrans", LOG_FMT_TCP_RETRANS, PR_MODE_TCP, LW_INIT, NULL },/* retrans */
+	{ "TCPfackets", LOG_FMT_TCP_FACKETS, PR_MODE_TCP, LW_INIT, NULL },/* fackets */
+	{ "TCPpmtu", LOG_FMT_TCP_PMTU, PR_MODE_TCP, LW_INIT, NULL },/* path mtu */
+	{ "TCPrcvssthresh", LOG_FMT_TCP_RCV_SSTHRESH, PR_MODE_TCP, LW_INIT, NULL },/* rcv slow start size threshold */
+	{ "TCPrtt", LOG_FMT_TCP_RTT, PR_MODE_TCP, LW_INIT, NULL },/* round trip time */
+	{ "TCPrttvar", LOG_FMT_TCP_RTTVAR, PR_MODE_TCP, LW_INIT, NULL },/* mean round trip time */
+	{ "TCPsndssthresh", LOG_FMT_TCP_SND_SSTHRESH, PR_MODE_TCP, LW_INIT, NULL },/* send slow start size threshold */
+	{ "TCPsndcwnd", LOG_FMT_TCP_SND_CWND, PR_MODE_TCP, LW_INIT, NULL },/* send congestion window */
+	{ "TCPadvmss", LOG_FMT_TCP_ADVMSS, PR_MODE_TCP, LW_INIT, NULL },/* advertised mss */
+	{ "TCPreordering", LOG_FMT_TCP_REORDERING, PR_MODE_TCP, LW_INIT, NULL },/* reordering */
+	{ "TCPrcvrtt", LOG_FMT_TCP_RCV_RTT, PR_MODE_TCP, LW_INIT, NULL },/* rcv round trip time */
+	{ "TCPrcvspace", LOG_FMT_TCP_RCV_SPACE, PR_MODE_TCP, LW_INIT, NULL },/* rcv space */
+	{ "TCPtotalretrans", LOG_FMT_TCP_TOTAL_RETRANS, PR_MODE_TCP, LW_INIT, NULL },/* total retrans */
 
 	/* The following tags are deprecated and will be removed soon */
 	{ "Bi", LOG_FMT_BACKENDIP, PR_MODE_TCP, LW_BCKIP, prepare_addrsource, "bi" }, /* backend source ip */
@@ -1307,6 +1334,10 @@ int build_logline(struct stream *s, char *dst, size_t maxsize, struct list *list
 	int iret;
 	struct logformat_node *tmp;
 
+	struct tcp_info tcp_info;
+	socklen_t optlen;
+	char option_str[28] = {0};
+
 	/* FIXME: let's limit ourselves to frontend logging for now. */
 
 	t_request = -1;
@@ -2160,6 +2191,318 @@ int build_logline(struct stream *s, char *dst, size_t maxsize, struct list *list
 				ret = NULL;
 				src = s->unique_id;
 				ret = lf_text(tmplog, src, maxsize - (tmplog - dst), tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_OPTIONS:  // %TCPoptions
+				ret = NULL;
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn) {
+				  if (tcp_info.tcpi_options & TCPI_OPT_TIMESTAMPS) {
+						strcat(option_str, "timestamps ");
+					}
+
+					if (tcp_info.tcpi_options & TCPI_OPT_SACK) {
+						strcat(option_str, "sack ");
+					}
+
+					if (tcp_info.tcpi_options & TCPI_OPT_WSCALE) {
+						strcat(option_str, "wscale ");
+					}
+
+					if (tcp_info.tcpi_options & TCPI_OPT_ECN) {
+						strcat(option_str, "ecn ");
+					}
+
+					ret = lf_text(tmplog, option_str, maxsize - (tmplog - dst), tmp);
+				} else {
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				}
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_SND_WSCALE:  // %TCPsdnwscale
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_snd_wscale, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RCV_WSCALE:  // %TCPrcvwscale
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_rcv_wscale, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_SND_MSS:  // %TCPsdnmss
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_snd_mss, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RCV_MSS:  // %TCPrcvmss
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_rcv_mss, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_UNACKED:  // %TCPunacked
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_unacked, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_SACKED:  // %TCPsacked
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_sacked, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_LOST:  // %TCPlost
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_lost, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RETRANS:  // %TCPretrans
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_retrans, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_FACKETS:  // %TCPfackets
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_fackets, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_PMTU:  // %TCPpmtu
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_pmtu, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RCV_SSTHRESH:  // %TCPrcvssthresh
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_rcv_ssthresh, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RTT:  // %TCPrtt
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_rtt, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RTTVAR:  // %TCPrttvar
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_rttvar, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_SND_SSTHRESH:  // %TCPsndsshthresh
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_snd_ssthresh, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_SND_CWND:  // %TCPsndcwnd
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_snd_cwnd, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_ADVMSS:  // %TCPadvmss
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_advmss, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_REORDERING:  // %TCPreordering
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_reordering, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RCV_RTT:  // %TCPrcvrtt
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_pmtu, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_RCV_SPACE:  // %TCPrcvspace
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_advmss, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
+				if (ret == NULL)
+					goto out;
+				tmplog = ret;
+				last_isspace = 0;
+				break;
+
+			case LOG_FMT_TCP_TOTAL_RETRANS:  // %TCPtotalretrans
+				optlen = sizeof(tcp_info);
+				conn = objt_conn(sess->origin);
+				getsockopt(conn->t.sock.fd, IPPROTO_TCP, TCP_INFO, &tcp_info, &optlen);
+				if (conn)
+					ret = ltoa_o(tcp_info.tcpi_total_retrans, tmplog, dst + maxsize - tmplog);
+				else
+					ret = lf_text_len(tmplog, NULL, 0, dst + maxsize - tmplog, tmp);
 				if (ret == NULL)
 					goto out;
 				tmplog = ret;

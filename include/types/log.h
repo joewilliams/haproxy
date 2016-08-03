@@ -3,7 +3,7 @@
   This file contains definitions of log-related structures and macros.
 
   Copyright (C) 2000-2006 Willy Tarreau - w@1wt.eu
-  
+
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
   License as published by the Free Software Foundation, version 2.1
@@ -111,6 +111,29 @@ enum {
 	LOG_FMT_UNIQUEID,
 	LOG_FMT_SSL_CIPHER,
 	LOG_FMT_SSL_VERSION,
+
+	LOG_FMT_TCP_OPTIONS,
+	LOG_FMT_TCP_SND_WSCALE,
+	LOG_FMT_TCP_RCV_WSCALE,
+	LOG_FMT_TCP_SND_MSS,
+	LOG_FMT_TCP_RCV_MSS,
+	LOG_FMT_TCP_UNACKED,
+	LOG_FMT_TCP_SACKED,
+	LOG_FMT_TCP_LOST,
+	LOG_FMT_TCP_RETRANS,
+	LOG_FMT_TCP_FACKETS,
+	LOG_FMT_TCP_PMTU,
+	LOG_FMT_TCP_RCV_SSTHRESH,
+	LOG_FMT_TCP_RTT,
+	LOG_FMT_TCP_RTTVAR,
+	LOG_FMT_TCP_SND_SSTHRESH,
+	LOG_FMT_TCP_SND_CWND,
+	LOG_FMT_TCP_ADVMSS,
+	LOG_FMT_TCP_REORDERING,
+	LOG_FMT_TCP_RCV_RTT,
+	LOG_FMT_TCP_RCV_SPACE,
+	LOG_FMT_TCP_TOTAL_RETRANS,
+
 };
 
 /* enum for parse_logformat_string */
